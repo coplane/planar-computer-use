@@ -15,12 +15,6 @@ router = APIRouter()
 pkg_dir = os.path.dirname(os.path.abspath(__file__))
 
 
-class VNCClickRequest(BaseModel):
-    x: int
-    y: int
-    button: int = 1
-
-
 class VNCTypeRequest(BaseModel):
     text: str
 

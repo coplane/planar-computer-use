@@ -14,7 +14,6 @@ BBOX_PATTERN = re.compile(r"<\|box_start\|>(.*?)<\|box_end\|>")
 COORDS_PATTERN = re.compile(r"\d+\.\d+|\d+")
 
 OSATLAS_HUGGINGFACE_SOURCE = "maxiw/OS-ATLAS"
-OSATLAS_HUGGINGFACE_SOURCE = "http://192.168.1.221:7080"
 OSATLAS_HUGGINGFACE_MODEL = "OS-Copilot/OS-Atlas-Base-7B"
 OSATLAS_HUGGINGFACE_API = "/run_example"
 
