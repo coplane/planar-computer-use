@@ -201,8 +201,14 @@ class VNCManager:
         if not self.is_connected or not self.client:
             raise ConnectionError("Not connected to VNC server.")
         try:
+            translated_keys = []
+            for key in keys:
+                if key.lower() == "enter":
+                    translated_keys.append("Return")
+                else:
+                    translated_keys.append(key)
             # Type the text
-            self.client.keyboard.press(*keys)
+            self.client.keyboard.press(*translated_keys)
 
             # Ensure keystrokes are sent
             await self.client.drain()

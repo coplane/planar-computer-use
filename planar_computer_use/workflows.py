@@ -20,7 +20,7 @@ from planar_computer_use.vnc_manager import instance
 
 logger = get_logger(__name__)
 # model="openai:hf/google/gemma-3-27b-it-qat-q4_0-gguf/q4_0"
-model = "openai:gpt-4o-mini"
+model = "openai:gpt-4o"
 
 
 class ScreenshotWithPrompt(BaseModel):
@@ -48,11 +48,13 @@ computer_user = Agent(
 
     It is possible that the computer is in a state where the action cannot be immediately performed,
     in which case you must perform an action that will drive towards the requested task.
-    If you believe that the task is already complete, then just reply with "task already complete".
+
+    If you believe that the task is already complete, then just reply with "done".
 
     Here are some examples:
 
-    - The user asks for an application which doesn't have a visible launcher or icon, but there's an application/start menu button: Click that button (or double-click for desktop icons).
+    - The user asks for an application which for which there's a visible icon on the desktop: Double-click that icon.
+    - The user asks for an application which doesn't have a visible launcher or icon, but there's an application/start menu button: Click that button.
     - The user asks to open Firefox, and there's "start menu" popup open with a "internet" section. Click the "internet" section.
     - The user asks to type a command in the terminal, but no terminal window is open: Try to open one.
     - The user asks to type a command in the terminal, and a terminal window is visible but unfocused: Click on it to focus.
@@ -63,9 +65,9 @@ computer_user = Agent(
     You should reply only with "done" if the task is done or "step" if more steps are needed.
     """,
     user_prompt="{{input.prompt}}",
+    output_type=str,
     model=model,
     input_type=ScreenshotWithPrompt,
-    output_type=None,
 )
 
 computer_use_orchestrator = Agent(
@@ -80,8 +82,11 @@ computer_use_orchestrator = Agent(
 
     - The task is to search the web for "UI Grounding", and there's no web browser open. The response is "open a web browser".
     - The task is to search the web for "UI Grounding", and there's a web browser open but the search bar is not focused. The response is "click the search bar".
-    - The task is to search the web for "UI Grounding", and there's a web browser open but the search bar is focused. The response should be "type "UI Grounding"".
+    - The task is to search the web for "UI Grounding", and there's a web browser open and the search bar is focused. The response should be "type "UI Grounding"".
+    - The task is to search the web for "UI Grounding", and there's a web browser open and the search bar is focused and it has "UI Grounding" in it. The response should be "press enter".
     - The task is to search the web for "UI Grounding", and there's a web browser with search results for "UI Grounding". The response should be "complete".
+    - The task is to open some application, but there's another application in the foreground and all windows should be minimized. The response should be "press super + d".
+    - The goal is to "htop" in a terminal window and there's a terminal window in the foreground with "htop" open. The response should be "complete"
     """,
     user_prompt="""{{input.prompt}}""",
     model=model,
@@ -118,7 +123,7 @@ async def perform_action(goal: str) -> str:
         screenshot_file = await take_screenshot()
         screenshot_with_prompt = ScreenshotWithPrompt(file=screenshot_file, prompt=goal)
         response = await computer_use_orchestrator(screenshot_with_prompt)
-        next_step = response.output.strip()
+        next_step = response.output.strip().lower().replace(".", "")
 
         if next_step in ["complete", '"complete"']:
             return f"Goal of {goal} already achieved, no further action needed."
@@ -127,6 +132,9 @@ async def perform_action(goal: str) -> str:
             response = await computer_user(screenshot_with_prompt)
             if response.output == "done":
                 break
+            screenshot_file = await take_screenshot()
+            screenshot_with_prompt = ScreenshotWithPrompt(file=screenshot_file, prompt=goal)
+            await sleep(1)
 
         await sleep(1)
 
