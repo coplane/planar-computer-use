@@ -10,29 +10,36 @@
         .controls label { margin-right: 5px; }
         .controls input[type="text"] { padding: 5px; margin-right: 10px; }
         .controls button { padding: 5px 10px; }
-        #vncScreen { border: 1px solid black; background-color: #f0f0f0; max-width: 100%; min-height: 700px; height: auto; }
+        #vncScreen { border: 1px solid black; background-color: #f0f0f0; min-width: 100%; height: auto; }
         .viewer { margin-top: 10px; }
+        #logMessages { height: 200px; overflow-y: auto; border: 1px solid #ccc; padding: 10px; margin-top: 10px; }
     </style>
 </head>
 <body>
     <div class="controls">
         <label for="vncHostPort">VNC Server (host:port):</label>
-        <input type="text" id="vncHostPort" value="127.0.0.1:5905">
+        <input type="text" id="vncHostPort" value="127.0.0.1:5901">
         <!-- Password input can be added here if needed, for now using default in backend query param -->
-        <button onclick="startStreaming()">Start Stream</button>
-        <button onclick="stopStreaming()">Stop Stream</button>
+        <button id="toggleStreamButton" onclick="toggleStreaming()">Connect</button>
     </div>
 
     <div class="viewer">
         <img id="vncScreen" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="VNC Screen Stream">
+        <div id="logMessages"></div>
     </div>
-    <div id="logMessages"></div>
 
     <script>
         const vncScreenImg = document.getElementById('vncScreen');
         const vncHostPortInput = document.getElementById('vncHostPort');
+        const toggleStreamButton = document.getElementById('toggleStreamButton');
         const logMessagesDiv = document.getElementById('logMessages');
         let eventSource = null;
+
+        // Load host:port from localStorage on page load
+        const savedHostPort = localStorage.getItem('vncHostPort');
+        if (savedHostPort) {
+            vncHostPortInput.value = savedHostPort;
+        }
 
         function logMessage(message) {
             console.log(message);
@@ -65,11 +72,15 @@
             // And append it to the URL: `&password=${encodeURIComponent(password)}`
             const streamUrl = `/api/vnc/stream?host_port=${encodeURIComponent(hostPort)}`;
 
-            logMessage(`Starting VNC screen stream from ${hostPort}...`);
+            logMessage(`Attempting to connect to VNC stream from ${hostPort}...`);
             eventSource = new EventSource(streamUrl);
 
             eventSource.onopen = function() {
                 logMessage(`Connection to stream ${hostPort} opened.`);
+                toggleStreamButton.textContent = 'Disconnect';
+                vncHostPortInput.disabled = true;
+                // Save host:port to localStorage on successful connection
+                localStorage.setItem('vncHostPort', hostPort);
             };
 
             eventSource.onmessage = function(event) {
@@ -88,7 +99,10 @@
                 logMessage(`Stream error for ${hostPort}: ${errorData.message}`);
                  if (eventSource.readyState === EventSource.CLOSED) {
                     logMessage(`EventSource connection to ${hostPort} closed.`);
-                    stopStreaming(); // Clean up
+                    // Call stopStreaming to ensure UI updates correctly
+                    if (eventSource) { // Check if stopStreaming hasn't already been called by onerror
+                        stopStreamingInternal();
+                    }
                 }
             });
 
@@ -96,16 +110,40 @@
             eventSource.onerror = function(error) { // This handles network errors for the EventSource itself
                 logMessage(`EventSource network error for ${hostPort}. Stream might be closed or server unavailable.`);
                 console.error('EventSource onerror:', error);
-                stopStreaming(); // Clean up
+                // Call stopStreaming to ensure UI updates correctly
+                if (eventSource) { // Check if stopStreaming hasn't already been called by error event listener
+                     stopStreamingInternal();
+                }
             };
         }
 
-        function stopStreaming() {
+        function stopStreamingInternal() { // Renamed to avoid confusion if called directly from UI
             if (eventSource) {
                 eventSource.close();
                 eventSource = null;
-                logMessage('VNC screen stream stopped by user.');
-                vncScreenImg.src = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="; // Reset image
+            }
+            logMessage('VNC screen stream stopped.');
+            vncScreenImg.src = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="; // Reset image
+            toggleStreamButton.textContent = 'Connect';
+            vncHostPortInput.disabled = false;
+        }
+
+        function stopStreaming() { // This is the function called by user/UI logic if needed (though toggle handles it)
+            if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
+                 logMessage('User requested to stop stream.');
+                 stopStreamingInternal();
+            } else {
+                logMessage('Stream is not active or already stopped.');
+            }
+        }
+
+        function toggleStreaming() {
+            if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
+                // If stream is active, stop it
+                stopStreaming();
+            } else {
+                // If stream is not active, start it
+                startStreaming();
             }
         }
 
