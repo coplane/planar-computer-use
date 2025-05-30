@@ -1,0 +1,32 @@
+db_connections:
+  app:
+    driver: sqlite+aiosqlite
+    path: computer_use.db
+
+app:
+  db_connection: app
+  api_base_path: /api
+
+storage:
+  backend: localdir
+  directory: .files
+
+sse_hub: true
+
+cors:
+  allow_origins:
+    [
+      "http://localhost:3000",
+      "https://staging.app.coplane.dev",
+    ]
+  allow_credentials: true
+  allow_methods: ["*"]
+  allow_headers: ["*"]
+
+ai_providers:
+  openai:
+    api_key: ${OPENAI_API_KEY}
+
+logging:
+  planar_computer_use:
+    level: INFO

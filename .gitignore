@@ -8,7 +8,6 @@ wheels/
 
 *.db
 *.files/
-planar.dev.yaml
 # Virtual environments
 .venv
 temp_screenshot.png
