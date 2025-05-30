@@ -103,19 +103,25 @@ class VNCManager:
     async def capture_screen_pil(self):
         if not self.is_connected or not self.client:
             raise ConnectionError("Not connected to VNC server.")
-        try:
-            # Get screenshot as numpy array (RGBA format)
-            pixels = await self.client.screenshot()
+        inner_exception = ""
+        for _ in range(5):
+            try:
+                # Get screenshot as numpy array (RGBA format)
+                pixels = await self.client.screenshot()
 
-            # Get dimensions from the video buffer
+                # Get dimensions from the video buffer
 
-            # Convert numpy array to PIL Image
-            # The screenshot() method returns RGBA data
-            image = Image.fromarray(pixels)
-            return image
-        except Exception as e:
-            logger.error(f"Failed to capture screen: {e}")
-            raise
+                # Convert numpy array to PIL Image
+                # The screenshot() method returns RGBA data
+                image = Image.fromarray(pixels)
+                return image
+            except Exception as e:
+                inner_exception = str(e)
+                await asyncio.sleep(2)
+                continue
+        raise Exception(
+            "Failed to capture screen after multiple attempts: " + inner_exception
+        )
 
     async def capture_screen(self) -> bytes:
         pil_image = await self.capture_screen_pil()
@@ -203,10 +209,13 @@ class VNCManager:
         try:
             translated_keys = []
             for key in keys:
-                if key.lower() == "enter":
-                    translated_keys.append("Return")
-                else:
-                    translated_keys.append(key)
+                match key.lower():
+                    case "enter":
+                        translated_keys.append("Return")
+                    case "control":
+                        translated_keys.append("Ctrl")
+                    case _:
+                        translated_keys.append(key.capitalize())
             # Type the text
             self.client.keyboard.press(*translated_keys)
 
@@ -222,13 +231,16 @@ class VNCManager:
         if not self.is_connected or not self.client:
             raise ConnectionError("Not connected to VNC server.")
         try:
-            # Type the text
-            self.client.keyboard.write(text)
+            for piece in text.split("\n"):
+                # Type the text
+                self.client.keyboard.write(piece)
 
-            # Ensure keystrokes are sent
-            await self.client.drain()
+                # Ensure keystrokes are sent
+                await self.client.drain()
 
-            logger.info(f"Typed: {text}")
+                await self.press_keys(["Return"])
+
+                logger.info(f"Typed: {text}")
         except Exception as e:
             logger.error(f"VNC type failed: {e}")
             raise
