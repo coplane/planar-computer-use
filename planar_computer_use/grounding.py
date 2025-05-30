@@ -7,13 +7,17 @@ from planar.utils import asyncify
 
 from planar_computer_use.models import ScreenshotWithPrompt
 from planar_computer_use.pil_utilities import draw_annotated_grid
-from planar_computer_use.vnc_manager import instance
+from planar_computer_use.vnc_manager import VNCManager
 from planar_computer_use.utils import image_bytes, upload_screenshot
 
 BBOX_PATTERN = re.compile(r"<\|box_start\|>(.*?)<\|box_end\|>")
 COORDS_PATTERN = re.compile(r"\d+\.\d+|\d+")
 
 OSATLAS_HUGGINGFACE_SOURCE = "maxiw/OS-ATLAS"
+osatlas_endpoint_override = os.getenv("OSATLAS_ENDPOINT_OVERRIDE")
+if osatlas_endpoint_override:
+    OSATLAS_HUGGINGFACE_SOURCE = osatlas_endpoint_override
+OSATLAS_HUGGINGFACE_SOURCE = "http://192.168.1.221:7080"
 OSATLAS_HUGGINGFACE_MODEL = "OS-Copilot/OS-Atlas-Base-7B"
 OSATLAS_HUGGINGFACE_API = "/run_example"
 
@@ -45,21 +49,35 @@ def _os_atlas_query_element_bbox(
 
 
 async def os_atlas_query_element_bbox(element: str):
-    vnc_manager = instance.get()
+    vnc_manager = VNCManager.get()
+    if not vnc_manager or not vnc_manager.is_connected:
+        raise ConnectionError("VNC manager not available or not connected.")
     screenshot_pil = await vnc_manager.capture_screen_pil()
-    with open("temp_screenshot.png", "wb") as f:
+    # Using a temporary file like this is not ideal, especially in async code.
+    # Consider passing bytes directly if possible, or ensure unique filenames if concurrent use.
+    # For now, retaining existing logic but noting this.
+    temp_file_path = "temp_screenshot_os_atlas.png"  # Make filename more specific
+    with open(temp_file_path, "wb") as f:
         f.write(image_bytes(screenshot_pil))
-    bbox = await _os_atlas_query_element_bbox(element, "temp_screenshot.png")
+    bbox = await _os_atlas_query_element_bbox(element, temp_file_path)
+    # It's good practice to clean up temporary files.
+    # os.remove(temp_file_path) # Add this if appropriate for your environment
     return bbox, screenshot_pil
 
 
 async def grounding_agent_query_element_bbox(element: str, steps: int = 2):
     from planar_computer_use.agents import grounding_agent
 
-    steps = 2
-    vnc_manager = instance.get()
-    screenshot_pil = await vnc_manager.capture_screen_pil()
-    target_rect = None
+    vnc_manager = VNCManager.get()
+    if not vnc_manager or not vnc_manager.is_connected:
+        raise ConnectionError(
+            "VNC manager not available or not connected for grounding_agent_query_element_bbox."
+        )
+
+    screenshot_pil = await vnc_manager.capture_screen_pil()  # Initial screenshot
+    target_rect = None  # Initialize target_rect
+
+    # steps = 2 # Parameter is already defaulted and can be overridden by caller
 
     for _ in range(steps):
         annotated_screenshot, cells = draw_annotated_grid(

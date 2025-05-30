@@ -10,4 +10,4 @@ wheels/
 *.files/
 # Virtual environments
 .venv
-temp_screenshot.png
+*.png

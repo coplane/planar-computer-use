@@ -5,40 +5,98 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VNC Viewer</title>
     <style>
-        #vncScreen { border: 1px solid black; background-color: #f0f0f0; }
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .controls { margin-bottom: 20px; }
+        .controls label { margin-right: 5px; }
+        .controls input[type="text"] { padding: 5px; margin-right: 10px; }
+        .controls button { padding: 5px 10px; }
+        #vncScreen { border: 1px solid black; background-color: #f0f0f0; max-width: 100%; height: auto; }
+        .viewer { margin-top: 10px; }
     </style>
 </head>
 <body>
+    <div class="controls">
+        <label for="vncHostPort">VNC Server (host:port):</label>
+        <input type="text" id="vncHostPort" value="127.0.0.1:5905">
+        <!-- Password input can be added here if needed, for now using default in backend query param -->
+        <button onclick="startStreaming()">Start Stream</button>
+        <button onclick="stopStreaming()">Stop Stream</button>
+    </div>
+
     <div class="viewer">
         <img id="vncScreen" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="VNC Screen Stream">
     </div>
+    <div id="logMessages"></div>
 
     <script>
         const vncScreenImg = document.getElementById('vncScreen');
+        const vncHostPortInput = document.getElementById('vncHostPort');
+        const logMessagesDiv = document.getElementById('logMessages');
         let eventSource = null;
+
+        function logMessage(message) {
+            console.log(message);
+            const p = document.createElement('p');
+            p.textContent = new Date().toLocaleTimeString() + ': ' + message;
+            logMessagesDiv.insertBefore(p, logMessagesDiv.firstChild);
+        }
 
         function startStreaming() {
             if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
-                console.log('Stream already active.');
+                logMessage('Stream already active. Stop it first or refresh.');
                 return;
             }
 
-            console.log('Starting VNC screen stream...');
-            eventSource = new EventSource('/api/vnc/stream');
+            const hostPort = vncHostPortInput.value.trim();
+            if (!hostPort) {
+                logMessage('VNC host:port cannot be empty.');
+                return;
+            }
+
+            // Basic validation for host:port format
+            if (!hostPort.includes(':')) {
+                logMessage('Invalid host:port format. Expected something like "hostname:5900".');
+                return;
+            }
+
+
+            // For simplicity, password is a default query parameter on the server.
+            // If you add a password field: const password = document.getElementById('vncPassword').value;
+            // And append it to the URL: `&password=${encodeURIComponent(password)}`
+            const streamUrl = `/api/vnc/stream?host_port=${encodeURIComponent(hostPort)}`;
+
+            logMessage(`Starting VNC screen stream from ${hostPort}...`);
+            eventSource = new EventSource(streamUrl);
+
+            eventSource.onopen = function() {
+                logMessage(`Connection to stream ${hostPort} opened.`);
+            };
 
             eventSource.onmessage = function(event) {
                 if (event.data) {
                     vncScreenImg.src = event.data;
                 }
             };
-            
+
             eventSource.addEventListener('status', function(event) {
                 const statusData = JSON.parse(event.data);
-                console.log('Stream status:', statusData);
+                logMessage(`Stream status for ${hostPort}: ${statusData.message} (Connected: ${statusData.connected})`);
             });
 
-            eventSource.onerror = function(error) {
-                console.error('EventSource error. Stream might be closed or server unavailable.', error);
+            eventSource.addEventListener('error', function(event) { // Note: 'error' event for EventSource itself
+                const errorData = event.data ? JSON.parse(event.data) : { message: "Unknown stream error or connection closed." };
+                logMessage(`Stream error for ${hostPort}: ${errorData.message}`);
+                 if (eventSource.readyState === EventSource.CLOSED) {
+                    logMessage(`EventSource connection to ${hostPort} closed.`);
+                    stopStreaming(); // Clean up
+                }
+            });
+
+
+            eventSource.onerror = function(error) { // This handles network errors for the EventSource itself
+                logMessage(`EventSource network error for ${hostPort}. Stream might be closed or server unavailable.`);
+                console.error('EventSource onerror:', error);
+                stopStreaming(); // Clean up
             };
         }
 
@@ -46,11 +104,13 @@
             if (eventSource) {
                 eventSource.close();
                 eventSource = null;
-                logMessage('VNC screen stream stopped.');
+                logMessage('VNC screen stream stopped by user.');
+                vncScreenImg.src = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="; // Reset image
             }
         }
-        
-        window.onload = startStreaming;
+
+        // Remove auto-start on load, let user click button
+        // window.onload = startStreaming;
     </script>
 </body>
 </html>

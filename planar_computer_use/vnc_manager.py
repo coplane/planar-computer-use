@@ -1,9 +1,9 @@
 import asyncio
 import base64
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 import io
 from typing import Optional
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, asynccontextmanager
 
 from PIL import Image
 from planar.logging import get_logger
@@ -11,117 +11,135 @@ import asyncvnc
 
 logger = get_logger(__name__)
 
+vnc_instance_cv: ContextVar[Optional["VNCManager"]] = ContextVar(
+    "vnc_instance_cv", default=None
+)
+
 
 class VNCManager:
-    def __init__(self):
+    def __init__(self, host: str, port: int, password: str):
+        self.host = host
+        self.port = port
+        self.password = password
         self.client: Optional[asyncvnc.Client] = None
         self.is_connected = False
-        self.host = None
-        self.port = None
         self.last_screenshot_base64 = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="  # Transparent pixel
-        self.screenshot_interval = 1
+        self._screenshot_interval = 1
         self._update_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
-        self._connection_task: Optional[asyncio.Task] = None
         self._exit_stack: Optional[AsyncExitStack] = None
+        self._cm_token: Optional[Token] = None
 
-    async def connect(self):
-        if self.is_connected:
-            raise ConnectionError("Already connected. Disconnect first.")
-        host = "10.0.204.205"
-        port = 5901
-        password = "123456"
+    @classmethod
+    def get(cls) -> Optional["VNCManager"]:
+        """Gets the VNCManager instance from the context variable."""
+        return vnc_instance_cv.get()
 
+    @classmethod
+    @asynccontextmanager
+    async def connect(cls, host_port_str: str, password: str):
         try:
-            logger.info(f"Attempting to connect to VNC server: {host}:{port}")
-
-            # Create exit stack to manage the connection context
-            self._exit_stack = AsyncExitStack()
-
-            # Connect using the context manager
-            self.client = await self._exit_stack.enter_async_context(
-                asyncvnc.connect(host, port, password=password)
+            host, port_str = host_port_str.split(":")
+            port = int(port_str)
+        except ValueError:
+            raise ValueError(
+                f"Invalid host:port format: {host_port_str}. Expected 'host:port'."
             )
 
-            self.is_connected = True
-            self.host = host
-            self.port = port
+        manager = cls(host, port, password)
 
-            logger.info(f"Successfully connected to VNC: {host}:{port}")
-            logger.info(f"Server info: {self.client}")
-
-            # Start the periodic screenshot updater
-            self._stop_event.clear()
-            self._update_task = asyncio.create_task(self._periodic_screenshot_updater())
-
-            return True
-
-        except Exception as e:
-            # Clean up on error
-            if self._exit_stack:
-                await self._exit_stack.aclose()
-                self._exit_stack = None
-            self.client = None
-            self.is_connected = False
-            logger.error(f"VNC Connection failed: {e}")
-            raise ConnectionError(f"Failed to connect to {host}:{port}: {e}")
-
-    async def disconnect(self):
-        if not self.is_connected:
-            logger.warning("Not connected, nothing to disconnect.")
-            return False
+        original_token = vnc_instance_cv.set(manager)
+        manager._cm_token = original_token
 
         try:
-            # Stop the updater task
-            if self._update_task:
-                self._stop_event.set()
-                self._update_task.cancel()
+            logger.info(
+                f"Attempting to connect to VNC server: {manager.host}:{manager.port}"
+            )
+            manager._exit_stack = AsyncExitStack()
+            manager.client = await manager._exit_stack.enter_async_context(
+                asyncvnc.connect(manager.host, manager.port, password=manager.password)
+            )
+            manager.is_connected = True
+            logger.info(f"Successfully connected to VNC: {manager.host}:{manager.port}")
+            logger.info(f"Server info: {manager.client}")
+
+            manager._stop_event.clear()
+            manager._update_task = asyncio.create_task(
+                manager._periodic_screenshot_updater()
+            )
+
+            yield manager
+        except Exception as e:
+            logger.error(
+                f"VNC Connection failed for {manager.host}:{manager.port}: {e}",
+                exc_info=True,
+            )
+            # Ensure partial cleanup if connection fails mid-way
+            if manager._update_task and not manager._update_task.done():
+                manager._stop_event.set()
+                manager._update_task.cancel()
                 try:
-                    await self._update_task
+                    await manager._update_task
                 except asyncio.CancelledError:
                     pass
-
-            # Close the connection context
-            if self._exit_stack:
-                await self._exit_stack.aclose()
-
-            logger.info("Disconnected from VNC server.")
-        except Exception as e:
-            logger.error(f"Error during VNC disconnect: {e}")
+            if manager._exit_stack:
+                await manager._exit_stack.aclose()
+            manager.client = None
+            manager.is_connected = False
+            raise  # Re-raise the exception after cleanup
         finally:
-            self._exit_stack = None
-            self.client = None
-            self.is_connected = False
-            self.host = None
-            self.port = None
-            self.last_screenshot_base64 = (
+            logger.info(f"Disconnecting from VNC server: {manager.host}:{manager.port}")
+            if manager._update_task:
+                manager._stop_event.set()
+                if not manager._update_task.done():
+                    manager._update_task.cancel()
+                    try:
+                        await manager._update_task
+                    except asyncio.CancelledError:
+                        logger.info(
+                            f"Screenshot updater task cancelled for {manager.host}:{manager.port}."
+                        )
+                    except Exception as e_task:
+                        logger.error(
+                            f"Error stopping screenshot updater for {manager.host}:{manager.port}: {e_task}",
+                            exc_info=True,
+                        )
+                manager._update_task = None
+
+            if manager._exit_stack:
+                try:
+                    await manager._exit_stack.aclose()
+                except Exception as e_stack:
+                    logger.error(
+                        f"Error closing VNC exit stack for {manager.host}:{manager.port}: {e_stack}",
+                        exc_info=True,
+                    )
+                manager._exit_stack = None
+
+            manager.client = None
+            manager.is_connected = False
+            manager.last_screenshot_base64 = (
                 "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
             )
 
-        return True
+            if manager._cm_token:
+                vnc_instance_cv.reset(manager._cm_token)
+                manager._cm_token = None
+            logger.info(
+                f"Disconnected and cleaned up for VNC server: {manager.host}:{manager.port}"
+            )
 
     async def capture_screen_pil(self):
         if not self.is_connected or not self.client:
             raise ConnectionError("Not connected to VNC server.")
-        inner_exception = ""
-        for _ in range(5):
+        for _ in range(10):
             try:
-                # Get screenshot as numpy array (RGBA format)
                 pixels = await self.client.screenshot()
-
-                # Get dimensions from the video buffer
-
-                # Convert numpy array to PIL Image
-                # The screenshot() method returns RGBA data
                 image = Image.fromarray(pixels)
                 return image
             except Exception as e:
-                inner_exception = str(e)
-                await asyncio.sleep(2)
-                continue
-        raise Exception(
-            "Failed to capture screen after multiple attempts: " + inner_exception
-        )
+                logger.error(f"Failed to capture screen: {e}")
+        raise Exception("Failed to capture screen after multiple attempts.")
 
     async def capture_screen(self) -> bytes:
         pil_image = await self.capture_screen_pil()
@@ -152,20 +170,30 @@ class VNCManager:
                     except Exception as e:
                         logger.error(f"Periodic screenshot update failed: {e}")
                 else:
+                    # This case should ideally not be hit if _stop_event is managed correctly
+                    # with is_connected status.
                     self.last_screenshot_base64 = (
                         "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
                     )
+                    break  # If not connected, stop trying to update.
 
-                # Wait for the interval or until stop event is set
-                try:
-                    await asyncio.wait_for(
-                        self._stop_event.wait(), timeout=self.screenshot_interval
-                    )
-                except asyncio.TimeoutError:
-                    continue
+                await asyncio.sleep(self._screenshot_interval)
+
         except asyncio.CancelledError:
-            logger.info("Screenshot updater task cancelled.")
-        logger.info("Screenshot updater task stopped.")
+            logger.info(
+                f"Screenshot updater task cancelled for {self.host}:{self.port}."
+            )
+        except Exception as e:
+            logger.error(
+                f"Error in periodic screenshot updater for {self.host}:{self.port}: {e}",
+                exc_info=True,
+            )
+            self.is_connected = False  # Assume connection is lost
+            self.last_screenshot_base64 = (
+                "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs="
+            )
+        finally:
+            logger.info(f"Screenshot updater task stopped for {self.host}:{self.port}.")
 
     async def mouse_move(self, x: int, y: int):
         if not self.is_connected or not self.client:
@@ -187,13 +215,14 @@ class VNCManager:
             self.client.mouse.move(x, y)
 
             # Map our button numbers to AsyncVNC button indices
-            # Our API: 1=left, 2=middle, 3=right
+            # Our API: 0=left, 1=middle, 2=right (standard for many libraries)
             # AsyncVNC: 0=left, 1=middle, 2=right
-            button_map = {1: 0, 2: 1, 3: 2}
-            vnc_button = button_map.get(button, 0)
+            # The existing code uses button=0 for left, button=2 for right.
+            # Let's assume button parameter means: 0 for left, 1 for middle, 2 for right.
+            # Default is 0 (left).
 
             # Click the button
-            self.client.mouse.click(vnc_button)
+            self.client.mouse.click(button)
 
             # Ensure events are sent
             await self.client.drain()
@@ -238,12 +267,9 @@ class VNCManager:
                 # Ensure keystrokes are sent
                 await self.client.drain()
 
-                await self.press_keys(["Return"])
+                await self.press_keys(["Return"])  # This sends a key press for "Return"
 
-                logger.info(f"Typed: {text}")
+            logger.info(f"Typed: {text}")  # Log after loop if successful
         except Exception as e:
             logger.error(f"VNC type failed: {e}")
             raise
-
-
-instance: ContextVar[VNCManager] = ContextVar("vnc_manager", default=VNCManager())
