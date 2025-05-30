@@ -1,0 +1,22 @@
+[project]
+name = "os-atlas"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=1.7.0",
+    "numpy>=2.2.6",
+    "pillow>=11.2.1",
+    "pydantic==2.10.6",
+    "qwen-vl-utils>=0.0.11",
+    "requests>=2.32.3",
+    "torch>=2.7.0",
+    "torchvision>=0.22.0",
+    "transformers<=4.49",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pyright>=1.1.401",
+]
