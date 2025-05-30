@@ -5,7 +5,7 @@ from planar_computer_use.vnc_manager import instance
 
 from pydantic import Field
 
-from planar_computer_use.osatlas import os_atlas_query
+from planar_computer_use.grounding import query_element_position
 
 logger = get_logger(__name__)
 
@@ -17,7 +17,7 @@ async def click_element(
 ):
     """Click on a visible UI element."""
     logger.info(f"Clicking on element: {element}")
-    x, y = await os_atlas_query(element)
+    x, y = await query_element_position(element)
     logger.debug(f"Coordinates for {element}: ({x}, {y})")
     vnc_manager = instance.get()
     await vnc_manager.click(x, y)
@@ -31,7 +31,7 @@ async def double_click_element(
 ):
     """Double-click on a visible UI element."""
     logger.info(f"Double-clicking on element: {element}")
-    x, y = await os_atlas_query(element)
+    x, y = await query_element_position(element)
     logger.debug(f"Coordinates for {element}: ({x}, {y})")
     vnc_manager = instance.get()
     await vnc_manager.click(x, y)
@@ -47,7 +47,7 @@ async def right_click_element(
 ):
     """Right-click on a visible UI element."""
     logger.info(f"Right-clicking on element: {element}")
-    x, y = await os_atlas_query(element)
+    x, y = await query_element_position(element)
     logger.debug(f"Coordinates for {element}: ({x}, {y})")
     vnc_manager = instance.get()
     await vnc_manager.click(x, y, button=2)
