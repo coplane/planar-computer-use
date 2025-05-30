@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VNC Viewer</title>
+    <style>
+        #vncScreen { border: 1px solid black; background-color: #f0f0f0; }
+    </style>
+</head>
+<body>
+    <div class="viewer">
+        <img id="vncScreen" src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" alt="VNC Screen Stream">
+    </div>
+
+    <script>
+        const vncScreenImg = document.getElementById('vncScreen');
+        let eventSource = null;
+
+        function startStreaming() {
+            if (eventSource && eventSource.readyState !== EventSource.CLOSED) {
+                console.log('Stream already active.');
+                return;
+            }
+
+            console.log('Starting VNC screen stream...');
+            eventSource = new EventSource('/api/vnc/stream');
+
+            eventSource.onmessage = function(event) {
+                if (event.data) {
+                    vncScreenImg.src = event.data;
+                }
+            };
+            
+            eventSource.addEventListener('status', function(event) {
+                const statusData = JSON.parse(event.data);
+                console.log('Stream status:', statusData);
+            });
+
+            eventSource.onerror = function(error) {
+                console.error('EventSource error. Stream might be closed or server unavailable.', error);
+            };
+        }
+
+        function stopStreaming() {
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+                logMessage('VNC screen stream stopped.');
+            }
+        }
+        
+        window.onload = startStreaming;
+    </script>
+</body>
+</html>

@@ -25,9 +25,12 @@ class VNCManager:
         self._connection_task: Optional[asyncio.Task] = None
         self._exit_stack: Optional[AsyncExitStack] = None
 
-    async def connect(self, host: str, port: int, password: str = "123456"):
+    async def connect(self):
         if self.is_connected:
             raise ConnectionError("Already connected. Disconnect first.")
+        host = "10.0.204.205"
+        port = 5901
+        password = "123456"
 
         try:
             logger.info(f"Attempting to connect to VNC server: {host}:{port}")

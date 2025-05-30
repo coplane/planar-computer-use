@@ -65,6 +65,7 @@ computer_user = Agent(
     user_prompt="{{input.prompt}}",
     model=model,
     input_type=ScreenshotWithPrompt,
+    output_type=None,
 )
 
 computer_use_orchestrator = Agent(
@@ -109,7 +110,7 @@ async def perform_action(goal: str) -> str:
     vnc_manager = instance.get()
 
     if not vnc_manager.is_connected:
-        await vnc_manager.connect(host="10.0.204.205", port=5901, password="123456")
+        await vnc_manager.connect()
 
     turns = 15
 
