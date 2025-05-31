@@ -33,7 +33,7 @@ async def get_index():
 async def stream_vnc(
     request: Request,
     host_port: str = Query(
-        "127.0.0.1:5905", description="VNC server address as host:port"
+        "127.0.0.1:5901", description="VNC server address as host:port"
     ),
     password: str = Query(
         "123456", description="VNC server password"

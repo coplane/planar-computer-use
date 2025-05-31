@@ -19,7 +19,7 @@ from planar_computer_use.vnc_manager import VNCManager
 @workflow()
 async def perform_computer_task(
     goal: str,
-    vnc_host_port: str = "127.0.0.1:5905",
+    vnc_host_port: str = "127.0.0.1:5901",
     vnc_password: str = "123456",
 ) -> str:
     async with VNCManager.connect(vnc_host_port, vnc_password) as vnc_manager:
@@ -66,7 +66,7 @@ async def draw_rectangle(element: str, grounding_agent: bool = False) -> PlanarF
 async def highlight_ui_element(
     element: str,
     grounding_agent: bool = False,
-    vnc_host_port: str = "127.0.0.1:5905",
+    vnc_host_port: str = "127.0.0.1:5901",
     vnc_password: str = "123456",
 ) -> PlanarFile:
     async with VNCManager.connect(vnc_host_port, vnc_password) as vnc_manager:
