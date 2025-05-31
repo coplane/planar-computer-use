@@ -7,6 +7,23 @@
     - The OS-ATLAS model can be run locally using an NVIDIA GPU with sufficient VRAM (see original Hugging Face Space for details: https://huggingface.co/spaces/maxiw/OS-ATLAS/tree/main).
     - For Apple Silicon users, a local inference option is available in the `os_atlas_run_local` directory (see below).
 
+### Running a Linux Desktop with VNC (using Docker or Podman)
+
+You can use the provided `Dockerfile` to build and run a Debian-based Linux desktop environment with XFCE and TigerVNC. This is useful for testing or if you don't have a separate VNC server.
+
+1.  **Build the Docker image:**
+    ```bash
+    podman build -t linux-vnc-desktop .
+    ```
+    (You can replace `podman` with `docker` if you prefer)
+
+2.  **Run the Docker container:**
+    ```bash
+    podman run -d --rm --name linux-vnc -p 5901:5901 -e VNC_PASSWORD=123456 linux-vnc-desktop
+    ```
+    - This command starts the container in detached mode (`-d`), removes the container when it exits (`--rm`), names the container `linux-vnc`, maps port `5901` on your host to port `5901` in the container, and sets the VNC password to `123456`.
+    - You can then connect to this VNC server at `127.0.0.1:5901` with the password `123456`.
+
 ### How to run
 
 - Start the server: `uv run planar dev`
