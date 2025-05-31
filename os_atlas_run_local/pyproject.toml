@@ -3,9 +3,10 @@ name = "os-atlas"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 dependencies = [
     "accelerate>=1.7.0",
+    "gradio>=5.32.0",
     "numpy>=2.2.6",
     "pillow>=11.2.1",
     "pydantic==2.10.6",
